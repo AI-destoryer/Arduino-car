@@ -1,8 +1,9 @@
+//---Anuhas--
 #include <Servo.h>
 #include <NewPing.h>
 #define DECODE_NEC 
 #include <IRremote.h>
-// ---Anuhas----
+
 // --- PIN CONFIGURATION ---
 const int IN1 = 5; const int IN2 = 4; // Left Motor
 const int IN3 = 7; const int IN4 = 6; // Right Motor
@@ -11,8 +12,8 @@ const int ECHO_PIN = A2;
 const int SERVO_PIN = 10;
 const int IR_RECEIVE_PIN = 2; 
 
-// --- PARAMETERS ---
-const int DIST_THRESHOLD = 25; 
+// --- ADJUSTED PARAMETERS ---
+const int DIST_THRESHOLD = 40; // INCREASED: Now stops 40cm away from objects
 const int MAX_DIST = 200;
 const int IR_TIMEOUT = 250; 
 
@@ -31,11 +32,10 @@ void setup() {
   myServo.write(90); 
   
   Serial.begin(9600);
-  Serial.println("Robot Ready.");
+  Serial.println("Robot Ready. Safety Margin: 40cm");
 }
 
 void loop() {
-  // 1. IR REMOTE HANDLING
   if (IrReceiver.decode()) {
     if (IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT) {
       lastIRTime = millis(); 
@@ -46,11 +46,9 @@ void loop() {
     IrReceiver.resume(); 
   }
 
-  // 2. DRIVE LOGIC
   if (autoMode) {
     autoControl();
   } else {
-    // Manual Safety: Stops motor if button is released
     if (millis() - lastIRTime > IR_TIMEOUT) {
       stopMotors();
     }
@@ -64,30 +62,41 @@ void handleRemote(uint16_t command) {
     case 0x08: autoMode = false; turnLeft();     break; 
     case 0x5A: autoMode = false; turnRight();    break; 
     case 0x1C: autoMode = false; stopMotors();   break; 
-    case 0x45: autoMode = false; stopMotors();   break; // OFF Button
-    case 0x42: autoMode = true;  stopMotors();   break; // AUTO Button
+    case 0x45: autoMode = false; stopMotors();   break; 
+    case 0x42: autoMode = true;  stopMotors();   break; 
   }
 }
 
 void autoControl() {
   int distance = getDistance();
+  
+  // Logic: If path is clear AND greater than 40cm
   if (distance > DIST_THRESHOLD) {
     moveForward();
-  } else {
-    stopMotors();
-    delay(200);
-    moveBackward();
-    delay(400);
+  } 
+  else {
+    // OBSTACLE DETECTED
+    stopMotors(); 
+    delay(300);       // Wait for momentum to stop
+    moveBackward();   // Back up to create space
+    delay(500);
     stopMotors();
     
-    myServo.write(30); delay(500);
+    // Look around for a better way
+    myServo.write(30);  delay(500);
     int distR = getDistance();
+    
     myServo.write(150); delay(600);
     int distL = getDistance();
-    myServo.write(90); delay(300);
     
-    if (distL > distR) turnLeft(); else turnRight();
-    delay(500);
+    myServo.write(90);  delay(300);
+    
+    if (distL > distR) {
+      turnLeft();
+    } else {
+      turnRight();
+    }
+    delay(600); // Increased turn time to clear the obstacle fully
     stopMotors();
   }
 }
@@ -95,27 +104,13 @@ void autoControl() {
 int getDistance() {
   delay(50); 
   int cm = sonar.ping_cm();
-  return (cm == 0) ? MAX_DIST : cm;
+  if (cm == 0) return MAX_DIST; 
+  return cm;
 }
 
 // --- CORE MOVEMENT FUNCTIONS ---
-void moveForward()  { 
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  
-}
-void moveBackward() { 
-  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); 
-  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); 
-}
-void turnLeft()     { 
-  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); 
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  
-}
-void turnRight()    { 
-  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  
-  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); 
-}
-void stopMotors()   { 
-  digitalWrite(IN1, LOW);  digitalWrite(IN2, LOW);  
-  digitalWrite(IN3, LOW);  digitalWrite(IN4, LOW);  
-}
+void moveForward()  { digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  }
+void moveBackward() { digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); }
+void turnLeft()     { digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  }
+void turnRight()    { digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); }
+void stopMotors()   { digitalWrite(IN1, LOW);  digitalWrite(IN2, LOW);  digitalWrite(IN3, LOW);  digitalWrite(IN4, LOW);  }
